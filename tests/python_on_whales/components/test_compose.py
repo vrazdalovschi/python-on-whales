@@ -661,3 +661,47 @@ def test_compose_multiple_profiles():
     assert "components_second_profile_test_service_1" in container_names
 
     docker.compose.down(timeout=1)
+
+
+def test_compose_port():
+    d = DockerClient(
+        compose_files=[
+            PROJECT_ROOT
+            / "tests/python_on_whales/components/dummy_compose_non_existent_image.yml"
+        ]
+    )
+    service = "busybox"
+    d.compose.up(services=[service], detach=True)
+
+    expected_tcp_port, expected_udp_port = None, None
+    for container in d.compose.ps():
+        if service in container.name:
+            expected_tcp_port = container.network_settings.ports["3000/tcp"][0]["HostPort"]
+            expected_udp_port = container.network_settings.ports["4000/udp"][0]["HostPort"]
+            break
+
+    tcp_port = d.compose.port(service, "3000")
+    assert expected_tcp_port == tcp_port
+
+    udp_port = d.compose.port(service, "4000", protocol="udp")
+    assert expected_udp_port == udp_port
+
+    invalid_protocol_type = d.compose.port(service, "4000", protocol="tcp")
+    assert "0" == invalid_protocol_type
+
+    unknown_port = d.compose.port(service, "1111")
+    assert "0" == unknown_port
+
+    try:
+        _ = d.compose.port("", "123")
+        assert False, "error should be raised for empty service"
+    except ValueError as e:
+        assert e is not None
+
+    try:
+        _ = d.compose.port(service, "")
+        assert False, "error should be raised for empty port"
+    except ValueError as e:
+        assert e is not None
+
+    d.compose.down(timeout=1)
